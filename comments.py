@@ -1,10 +1,19 @@
 import idaapi
+import idautils
 import sys
 
 hotkey_str = "Alt-s"
 hotkey_str2 = "Alt-g"
 default_operand = 0
 
+all_func_ea = idautils.Functions()
+func_list = {}
+for ida_func_ea in all_func_ea:
+        func_name = GetFunctionName(ida_func_ea)
+        func_list[func_name] = ida_func_ea
+        print func_name
+
+                                
 class CommentUIHook(idaapi.UI_Hooks):
     def __init__(self):
         idaapi.UI_Hooks.__init__(self)
@@ -13,14 +22,12 @@ class CommentUIHook(idaapi.UI_Hooks):
     def get_ea_hint(self, ea):
         """
         The UI wants to display a simple hint for an address in the navigation band
-        
         @param ea: The address
         @return: String with the hint or None
         """
         print("get_ea_hint(%x)" % ea)
-        
+ 
 
-#---------------------------------------------------------------------
 # Remove an existing hook on second run
 try:
     ui_hook_stat = "un"
@@ -38,6 +45,9 @@ except:
 print("UI hook %sinstalled. Run the script again to %sinstall" % (ui_hook_stat, ui_hook_stat))
 
 
+
+
+#---------------------------------------------------------------------
 class CommentViewer(simplecustviewer_t):
     def Create(self, sn=None):
         # Form the title
@@ -45,10 +55,10 @@ class CommentViewer(simplecustviewer_t):
         # Create the customviewer
         if not simplecustviewer_t.Create(self, title):
             return False
-        self.menu_hello = self.AddPopupMenu("Hello")
-        self.menu_world = self.AddPopupMenu("World")
+        self.menu_set_comment = self.AddPopupMenu("Set Comment")
+        self.menu_remove_comment = self.AddPopupMenu("Remove Comment")
 
-        #self.AddLine("Line %d" % i)
+        self.AddLine("")
         return True
 
     def OnClick(self, shift):
@@ -56,7 +66,24 @@ class CommentViewer(simplecustviewer_t):
         Cursor position changed.
         @return: Nothing
         """
-        print "OnClick"
+        #print "OnClick" 
+
+    def SetComment(self,comm):
+        self.EditLine(self,0,comm)
+
+    def OnPopupMenu(self, menu_id):
+        if menu_id == self.menu_set_comment:
+	    sEA = ScreenEA()
+	    SetFunctionCmt(sEA,"Test Comment",0)
+        elif menu_id == self.menu_world:
+            sEA = ScreenEA()
+            g.SetComment(GetFunctionCmt(sEA,0))
+        else:
+            # Unhandled
+            return False
+        return True
+
+
 
 
 g = CommentViewer()
@@ -66,7 +93,7 @@ g.Show()
 
 def on_click():
     sEA = ScreenEA()
-    print GetFunctionCmt(sEA,0)
+    g.SetComment(GetFunctionCmt(sEA,0))
     #lnum = GetLineNumber(sEA)
     #if lnum in comment_dict:
     #        print comment_dict(lnum)        
@@ -84,7 +111,7 @@ def on_hotkey():
     #comment_dict[lnum] = comment
     #MakeComm(sEA,"Test Comment")
     SetFunctionCmt(sEA,"Test Comment",0)
-    graph()
+    ##graph()
 
 
 def go_callback(*args):
@@ -105,7 +132,6 @@ try:
         idaapi.del_menu_item(ctx)
 except:
     pass
-
 
 ctx = idaapi.add_menu_item("Search/", "Go", "", 0, go_callback, tuple("hello world"))
 if ctx is None:
