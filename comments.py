@@ -1,48 +1,124 @@
 import idaapi
 import idautils
 import sys
+import socket
+import pickle
+
+DEFAULT_PORT=9876
+DEFAULT_BUFSIZE=8192
 
 hotkey_str = "Alt-s"
 hotkey_str2 = "Alt-g"
 default_operand = 0
 
-all_func_ea = idautils.Functions()
-func_list = {}
-for ida_func_ea in all_func_ea:
+def report(func_dict):
+    s = socket.socket()
+    s.connect((socket.gethostname(),DEFAULT_PORT))
+    s.send("REPORT")
+    data = s.recv(DEFAULT_BUFSIZE)
+    if str(data) == "PROCEED":
+        dumped = pickle.dumps(func_dict)
+        s.sendall(dumped)
+        s.send("DONE")
+    s.close()
+    print "Reported"
+
+def report_all():
+    print "Scanning..."
+    all_func_ea = idautils.Functions()
+    func_list = {}
+    #func_names = []
+    for ida_func_ea in all_func_ea:
         func_name = GetFunctionName(ida_func_ea)
-        func_list[func_name] = ida_func_ea
-        print func_name
+        comm = GetFunctionCmt(ida_func_ea, True)
+        print comm
+        if comm:
+                func_list[func_name] = comm
+                #func_names.append(func_name)
+    if len(func_list) >0:
+        report(func_list)
+    print "Done"
 
-                                
-class CommentUIHook(idaapi.UI_Hooks):
+report_all()
+
+
+
+class comment_idb_hook_t(idaapi.IDB_Hooks):
     def __init__(self):
-        idaapi.UI_Hooks.__init__(self)
-        self.cmdname = "<no command>"
+        idaapi.IDB_Hooks.__init__(self)
 
-    def get_ea_hint(self, ea):
-        """
-        The UI wants to display a simple hint for an address in the navigation band
-        @param ea: The address
-        @return: String with the hint or None
-        """
-        print("get_ea_hint(%x)" % ea)
- 
+    def cmt_changed(self, ea, repeatable):
+        print "cmt_changed"
+        #print str(ea)
+        #print str(arg1)
+        func_name = GetFunctionName(ea)
+        comm = GetFunctionCmt(ea, repeatable)
+        print func_name
+        print comm
+        tmp_dict = {func_name:comm}
+        report(tmp_dict)
+        return 0
+#
+#     def assemble(self, ea, cs, ip, use32, line):
+#         line = line.strip()
+#         if line == "xor eax, eax":
+#             return "\x33\xC0"
+#         elif line == "nop":
+#             # Decode current instruction to figure out its size
+#             cmd = idautils.DecodeInstruction(ea)
+#             if cmd:
+#                 # NOP all the instruction bytes
+#                 return "\x90" * cmd.size
+#         return None
 
+#---------------------------------------------------------------------
 # Remove an existing hook on second run
 try:
-    ui_hook_stat = "un"
-    print("UI hook: checking for hook...")
-    uihook
-    print("UI hook: unhooking....")
-    uihook.unhook()
-    del uihook
+    print "IDB hook checking for hook..."
+    idbhook
+    print "IDB hook unhooking...."
+    idbhook.unhook()
+    del idbhook
 except:
-    print("UI hook: not installed, installing now....")
-    ui_hook_stat = ""
-    uihook = CommentUIHook()
-    uihook.hook()
+    print "IDB hook was not installed"
 
-print("UI hook %sinstalled. Run the script again to %sinstall" % (ui_hook_stat, ui_hook_stat))
+try:
+    idbhook = comment_idb_hook_t()
+    idbhook.hook()
+    print "IDB hook installed"
+except:
+    print "Failed installing hook"
+
+
+# class CommentUIHook(idaapi.UI_Hooks):
+#     def __init__(self):
+#         idaapi.UI_Hooks.__init__(self)
+#         self.cmdname = "<no command>"
+# 
+#     def get_ea_hint(self, ea):
+#         """
+#         The UI wants to display a simple hint for an address in the navigation band
+#         @param ea: The address
+#         @return: String with the hint or None
+#         """
+#         print("get_ea_hint(%x)" % ea)
+#  
+# 
+# # Remove an existing hook on second run
+# try:
+#     ui_hook_stat = "un"
+#     print("UI hook: checking for hook...")
+#     uihook
+#     print("UI hook: unhooking....")
+#     uihook.unhook()
+#     del uihook
+# except:
+#     print("UI hook: not installed, installing now....")
+#     ui_hook_stat = ""
+#     uihook = CommentUIHook()
+#     uihook.hook()
+# 
+# print("UI hook %sinstalled. Run the script again to %sinstall" % (ui_hook_stat, ui_hook_stat))
 
 
 
@@ -139,17 +215,4 @@ if ctx is None:
     del ctx
 else:
     print "Menu added successfully!"
-
-#  ua_ana0(get_screen_ea());
-#AnalyseArea((), eEA)
-#  if (get_nb_op())
-#    num = getOpNum();
-#    if ( !(cmd.Operands[0].showed()) )
-#    op = new df_op_t(num);
-#    op->normalize();
-#    basic_ana::set_option(ANA_OPTIONS);
-#    global_ana::set_depth_limit(DEPTH_MIN,DEPTH_MAX);
-#    global_ana::add_limits(area_t(EA_MIN,EA_MAX));
-#    gti = global_ana::global_trace(get_screen_ea(),op,TRACE_BACKWARD);
-#    gti = global_ana::global_trace(get_screen_ea(),op,TRACE_FORWARD);
 

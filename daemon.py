@@ -7,14 +7,20 @@ import win32evtlogutil
 import servicemanager
 import os
 import socket
+import random
+import pickle
 
 DEFAULT_PORT=9876
 DEFAULT_TIMEOUT=2000
+DEFAULT_BUFSIZE=8192
 
 class IDACommentDaemon(win32serviceutil.ServiceFramework):
     _svc_name_ = "IDACommentDaemon"
     _svc_display_name_ = "IDA Comment Daemon"
     _svc_description_='IDA Comment Daemon'
+    _svc_deps_ = ["EventLog"]
+    func_dict = {}
+
     def __init__(self, args):
         win32serviceutil.ServiceFramework.__init__(self, args)
         self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
@@ -22,38 +28,56 @@ class IDACommentDaemon(win32serviceutil.ServiceFramework):
     def SvcStop(self):
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
         win32event.SetEvent(self.hWaitStop)
+        s = socket.socket()
+        s.connect((socket.gethostname(),DEFAULT_PORT))
+        s.send("SHUTDOWN")
+        s.close()
 
     def SvcDoRun(self):
-        servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,servicemanager.PYS_SERVICE_STARTED,(self._svc_name_, ''))
-        self.timeout=DEFAULT_TIMEOUT
-        servicemanager.LogInfoMsg(_svc_display_name_+" started")
+        # wait for beeing stopped...
+        #win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
+        #win32event.WaitForSingleObject(self.hWaitStop, self.timeout)
 
-        #server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #server_socket.bind(("", DEFAULT_PORT))
+        servicemanager.LogInfoMsg(self._svc_display_name_+" Binding...")
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind(("",DEFAULT_PORT))
 
         while 1:
-            # Wait for service stop signal, if I timeout, loop again
-            rc = win32event.WaitForSingleObject(self.hWaitStop, self.timeout)
-            # Check to see if self.hWaitStop happened
-            if rc == win32event.WAIT_OBJECT_0:
-                servicemanager.LogInfoMsg(_svc_display_name_+" stopped")
-                break
+            servicemanager.LogInfoMsg(self._svc_display_name_+" Listening...")
+            server_socket.listen(5)
 
-            # server_socket.listen(5)
-#             print "Waiting for client on port"
-# 
-#             while 1:
-#                 client_socket, address = server_socket.accept()
-#                 print "I got a connection from ", address
-#                 data = client_socket.recv(BUFSIZE)
+            client_socket, address = server_socket.accept()
+            data = client_socket.recv(DEFAULT_BUFSIZE)
+            servicemanager.LogInfoMsg(self._svc_display_name_+" Got: "+str(data))
+
+            if str(data) == "SHUTDOWN":
+                client_socket.close()
+                return
+            
+            elif str(data) == "REPORT":
+                client_socket.send("PROCEED")
+                report_data = ''
+                while 1:
+                    tmp_data = client_socket.recv(DEFAULT_BUFSIZE)
+                    if tmp_data == "DONE":
+                            break
+                    report_data += tmp_data
+
+                client_socket.close()
+                func_names = pickle.loads(report_data)
+                self.func_dict.update(func_names)
+                servicemanager.LogInfoMsg(self._svc_display_name_+" DB size: "+str(len(self.func_dict)))
+                servicemanager.LogInfoMsg(self._svc_display_name_+" Contents: "+str(self.func_dict))
+
+            elif str(data) == "QUERY":
+                client_socket.send("PROCEED")
+                query_data = client_socket.recv(DEFAULT_BUFSIZE)
+                client_socket.close()
 
 
-
-def ctrlHandler(ctrlType):
-        return True
 
 if __name__=='__main__':
-        win32api.SetConsoleCtrlHandler(ctrlHandler, True)
+        #win32api.SetConsoleCtrlHandler(ctrlHandler, True)
         win32serviceutil.HandleCommandLine(IDACommentDaemon)
 
 
